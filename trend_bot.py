@@ -4,8 +4,7 @@ Saatlik Global Trend Shorts Botu
 - Son 4 saatte yüklenmiş, en az 40 bin izlenmeli Shorts'ları bulur (YouTube Data API, ücretsiz)
 - "Saatte izlenme" hızına göre sıralar, en fazla 50 tanesini Telegram'a gönderir
 - Daha önce gönderdiği videoyu tekrar göndermez (sent.json)
-- 2. bot (Küçük Kanal Radarı): 1000 abone altı kanalların son 6 saatte 20 bin+ izlenen
-  Shorts'larını ayrı Telegram botuna gönderir (aynı aramayı kullanır, ekstra kota harcamaz)
+- 2. bot (Küçük Kanal Radarı) ayrı dosyada: small_radar.py (6 saatte bir, derin arama)
 Ek paket gerekmez (sadece Python).
 """
 import json
@@ -20,7 +19,7 @@ TG_TOKEN = os.environ["TG_TOKEN"]
 TG_CHAT_ID = os.environ["TG_CHAT_ID"]
 
 # ===== AYARLAR =====
-# Her saat: Amerika + Türkiye + sırayla bir Avrupa ülkesi (ücretsiz kotayı aşmamak için 3 arama)
+# Her saat: Amerika + Türkiye; 2 saatte bir de sırayla bir Avrupa ülkesi
 FIXED_REGIONS = [("US", "en"), ("TR", "tr")]
 EUROPE_ROTATION = [("GB", "en"), ("DE", "de"), ("FR", "fr"), ("ES", "es"), ("IT", "it")]
 TOP_N = 50
@@ -32,10 +31,7 @@ SEND_IF_EMPTY = False    # uygun video yoksa mesaj atma
 
 # Küçük Kanal Radarı (2. bot)
 TG_TOKEN_SMALL = os.environ.get("TG_TOKEN_SMALL", "")
-SMALL_MAX_SUBS = 1000          # 1000 abonenin altı
-SMALL_MAX_AGE_HOURS = 6        # son 6 saatte yüklenmiş
-SMALL_MIN_VIEWS = 20_000       # en az 20 bin izlenme
-SEARCH_HOURS = max(MAX_AGE_HOURS, SMALL_MAX_AGE_HOURS)
+SEARCH_HOURS = MAX_AGE_HOURS
 
 # Hindistan filtresi
 BLOCKED_COUNTRIES = {"IN"}
@@ -59,8 +55,11 @@ def iso_to_seconds(d):
 
 
 def regions_this_hour():
+    # Avrupa 2 saatte bir (kota Küçük Kanal Radarı'na da yetsin diye)
     hour = datetime.now(timezone.utc).hour
-    return FIXED_REGIONS + [EUROPE_ROTATION[hour % len(EUROPE_ROTATION)]]
+    if hour % 2:
+        return FIXED_REGIONS
+    return FIXED_REGIONS + [EUROPE_ROTATION[(hour // 2) % len(EUROPE_ROTATION)]]
 
 
 def find_ids():
@@ -222,14 +221,3 @@ if __name__ == "__main__":
     save_sent(sent)
     print(f"{len(rows)} yeni video gönderildi.")
 
-    # ===== 2. bot: Küçük Kanal Radarı =====
-    if TG_TOKEN_SMALL:
-        sent_s = load_sent("sent_small.json")
-        small = [r for r in score(videos, countries, SMALL_MAX_AGE_HOURS, SMALL_MIN_VIEWS, SMALL_MAX_SUBS)
-                 if r["id"] not in sent_s][:TOP_N]
-        if small:
-            send_telegram(small, "🌱 Küçük Kanal Radarı", TG_TOKEN_SMALL)
-        for r in small:
-            sent_s[r["id"]] = now_ts
-        save_sent(sent_s, "sent_small.json")
-        print(f"Küçük kanal: {len(small)} yeni video gönderildi.")
