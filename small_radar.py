@@ -2,7 +2,7 @@
 Küçük Kanal Radarı (2. bot)
 - 4 saatte bir çalışır
 - Amerika'da ilk 150, Türkiye'de ilk 100 videoya bakar (ücretsiz kotanın elverdiği en derin arama)
-- 1000 abone altı kanalların son 6 saatte 20 bin+ izlenen Shorts'larını ayrı Telegram botuna gönderir
+- 5000 abone altı kanalların son 6 saatte 10 bin+ izlenen Shorts'larını ayrı Telegram botuna gönderir
 - Hindistan hariç, aynı videoyu tekrar göndermez (sent_small.json)
 """
 from datetime import datetime, timedelta, timezone
@@ -11,9 +11,9 @@ import trend_bot as tb
 
 # ===== AYARLAR =====
 DEEP_REGIONS = [("US", "en", 3), ("TR", "tr", 2)]   # (ülke, dil, kaç sayfa x 50 video)
-SMALL_MAX_SUBS = 1000
+SMALL_MAX_SUBS = 5000
 SMALL_MAX_AGE_HOURS = 6
-SMALL_MIN_VIEWS = 20_000
+SMALL_MIN_VIEWS = 10_000
 SENT_SMALL = "sent_small.json"
 
 
