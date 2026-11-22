@@ -1,7 +1,7 @@
 """
 Saatlik Global Trend Shorts Botu
 - Amerika, Avrupa ve Türkiye ağırlıklı; Hindistan içerikleri tamamen dışarıda
-- Son 4 saatte yüklenmiş, en az 200 bin izlenmeli Shorts'ları bulur (YouTube Data API, ücretsiz)
+- Son 4 saatte yüklenmiş, en az 40 bin izlenmeli Shorts'ları bulur (YouTube Data API, ücretsiz)
 - "Saatte izlenme" hızına göre sıralar, en fazla 50 tanesini Telegram'a gönderir
 - Daha önce gönderdiği videoyu tekrar göndermez (sent.json)
 Ek paket gerekmez (sadece Python).
@@ -25,7 +25,7 @@ TOP_N = 50
 PER_MESSAGE = 10         # Telegram mesajı çok uzamasın diye 10'arlı gönder
 MAX_SECONDS = 180        # Shorts sınırı: 3 dakika
 MAX_AGE_HOURS = 4        # 4 saatten eski videoları gösterme
-MIN_VIEWS = 200_000      # en az 200 bin izlenme
+MIN_VIEWS = 40_000       # en az 40 bin izlenme
 SEND_IF_EMPTY = False    # uygun video yoksa mesaj atma
 
 # Hindistan filtresi
