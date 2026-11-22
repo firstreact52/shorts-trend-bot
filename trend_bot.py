@@ -18,7 +18,8 @@ TG_CHAT_ID = os.environ["TG_CHAT_ID"]
 
 # ===== AYARLAR =====
 # Bölgeler: "" = genel/global. Kota için az tutuldu (her arama 100 birim).
-REGIONS = ["", "US", "IN"]
+REGIONS = ["", "US", "GB"]
+LANGUAGE = "en"          # İngilizce ağırlıklı (global) sonuçlar
 TOP_N = 10
 MAX_SECONDS = 180        # Shorts sınırı: 3 dakika
 MAX_AGE_HOURS = 4        # 4 saatten eski videoları gösterme
@@ -52,6 +53,7 @@ def find_ids():
             "order": "viewCount",
             "publishedAfter": since,
             "maxResults": 50,
+            "relevanceLanguage": LANGUAGE,
         }
         if region:
             p["regionCode"] = region
