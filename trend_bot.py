@@ -4,6 +4,8 @@ Saatlik Global Trend Shorts Botu
 - Son 4 saatte yüklenmiş, en az 40 bin izlenmeli Shorts'ları bulur (YouTube Data API, ücretsiz)
 - "Saatte izlenme" hızına göre sıralar, en fazla 50 tanesini Telegram'a gönderir
 - Daha önce gönderdiği videoyu tekrar göndermez (sent.json)
+- 2. bot (Küçük Kanal Radarı): 1000 abone altı kanalların son 6 saatte 20 bin+ izlenen
+  Shorts'larını ayrı Telegram botuna gönderir (aynı aramayı kullanır, ekstra kota harcamaz)
 Ek paket gerekmez (sadece Python).
 """
 import json
@@ -27,6 +29,13 @@ MAX_SECONDS = 180        # Shorts sınırı: 3 dakika
 MAX_AGE_HOURS = 4        # 4 saatten eski videoları gösterme
 MIN_VIEWS = 40_000       # en az 40 bin izlenme
 SEND_IF_EMPTY = False    # uygun video yoksa mesaj atma
+
+# Küçük Kanal Radarı (2. bot)
+TG_TOKEN_SMALL = os.environ.get("TG_TOKEN_SMALL", "")
+SMALL_MAX_SUBS = 1000          # 1000 abonenin altı
+SMALL_MAX_AGE_HOURS = 6        # son 6 saatte yüklenmiş
+SMALL_MIN_VIEWS = 20_000       # en az 20 bin izlenme
+SEARCH_HOURS = max(MAX_AGE_HOURS, SMALL_MAX_AGE_HOURS)
 
 # Hindistan filtresi
 BLOCKED_COUNTRIES = {"IN"}
@@ -55,7 +64,7 @@ def regions_this_hour():
 
 
 def find_ids():
-    since = (datetime.now(timezone.utc) - timedelta(hours=MAX_AGE_HOURS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    since = (datetime.now(timezone.utc) - timedelta(hours=SEARCH_HOURS)).strftime("%Y-%m-%dT%H:%M:%SZ")
     ids = set()
     for region, lang in regions_this_hour():
         data = get("https://www.googleapis.com/youtube/v3/search", {
@@ -84,16 +93,21 @@ def get_details(ids):
     return out
 
 
+CHANNEL_SUBS = {}  # kanal -> abone sayısı (gizliyse None)
+
+
 def channel_countries(videos):
     ch_ids = list({v["snippet"]["channelId"] for v in videos})
     countries = {}
     for i in range(0, len(ch_ids), 50):
         data = get(
             "https://www.googleapis.com/youtube/v3/channels",
-            {"part": "snippet", "id": ",".join(ch_ids[i:i + 50])},
+            {"part": "snippet,statistics", "id": ",".join(ch_ids[i:i + 50])},
         )
         for c in data.get("items", []):
             countries[c["id"]] = c["snippet"].get("country", "")
+            st = c.get("statistics", {})
+            CHANNEL_SUBS[c["id"]] = None if st.get("hiddenSubscriberCount") else int(st.get("subscriberCount", 0))
     return countries
 
 
@@ -109,7 +123,9 @@ def is_indian(v, countries):
     return False
 
 
-def score(videos, countries):
+def score(videos, countries, max_age=None, min_views=None, max_subs=None):
+    max_age = MAX_AGE_HOURS if max_age is None else max_age
+    min_views = MIN_VIEWS if min_views is None else min_views
     now = datetime.now(timezone.utc)
     rows = []
     for v in videos:
@@ -121,7 +137,10 @@ def score(videos, countries):
         views = int(v["statistics"].get("viewCount", 0))
         pub = datetime.fromisoformat(v["snippet"]["publishedAt"].replace("Z", "+00:00"))
         age_h = (now - pub).total_seconds() / 3600
-        if age_h > MAX_AGE_HOURS or views < MIN_VIEWS:
+        if age_h > max_age or views < min_views:
+            continue
+        subs = CHANNEL_SUBS.get(v["snippet"]["channelId"])
+        if max_subs is not None and (subs is None or subs >= max_subs):
             continue
         hours = max(age_h, 0.1)
         rows.append({
@@ -129,6 +148,7 @@ def score(videos, countries):
             "channel": v["snippet"]["channelTitle"],
             "country": countries.get(v["snippet"]["channelId"], ""),
             "views": views,
+            "subs": subs,
             "per_hour": int(views / hours),
             "id": v["id"],
             "url": f"https://youtube.com/shorts/{v['id']}",
@@ -142,9 +162,9 @@ SENT_FILE = "sent.json"
 KEEP_HOURS = 48  # 48 saatten eski kayıtları sil (dosya şişmesin)
 
 
-def load_sent():
+def load_sent(path=SENT_FILE):
     try:
-        with open(SENT_FILE) as f:
+        with open(path) as f:
             data = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
@@ -152,40 +172,41 @@ def load_sent():
     return {vid: t for vid, t in data.items() if t > limit}
 
 
-def save_sent(sent):
-    with open(SENT_FILE, "w") as f:
+def save_sent(sent, path=SENT_FILE):
+    with open(path, "w") as f:
         json.dump(sent, f)
 
 
-def tg_send(text):
+def tg_send(text, token=None):
     body = urllib.parse.urlencode({
         "chat_id": TG_CHAT_ID,
         "text": text,
         "disable_web_page_preview": "true",
     }).encode()
-    urllib.request.urlopen(f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage", body, timeout=30)
+    urllib.request.urlopen(f"https://api.telegram.org/bot{token or TG_TOKEN}/sendMessage", body, timeout=30)
 
 
-def send_telegram(rows):
+def send_telegram(rows, title="🔥 Global Trend Shorts", token=None):
     saat = datetime.now(timezone(timedelta(hours=3))).strftime("%d.%m %H:%M")
     if not rows:
-        tg_send(f"🔥 Global Trend Shorts — {saat}\n\nBu saat sonuç bulunamadı.")
+        tg_send(f"{title} — {saat}\n\nBu saat sonuç bulunamadı.", token)
         return
     total = (len(rows) + PER_MESSAGE - 1) // PER_MESSAGE
     for part in range(total):
         chunk = rows[part * PER_MESSAGE:(part + 1) * PER_MESSAGE]
-        head = f"🔥 Global Trend Shorts — {saat}"
+        head = f"{title} — {saat}"
         if total > 1:
             head += f" ({part + 1}/{total})"
         lines = [head + "\n"]
         for i, r in enumerate(chunk, part * PER_MESSAGE + 1):
             flag = f" [{r['country']}]" if r["country"] else ""
+            abone = f" ({r['subs']:,} abone)" if r.get("subs") is not None else ""
             lines.append(
                 f"{i}. {r['title'][:80]}\n"
-                f"   👤 {r['channel']}{flag} | 👁 {r['views']:,} | ⚡ {r['per_hour']:,}/saat\n"
+                f"   👤 {r['channel']}{flag}{abone} | 👁 {r['views']:,} | ⚡ {r['per_hour']:,}/saat\n"
                 f"   {r['url']}\n"
             )
-        tg_send("\n".join(lines))
+        tg_send("\n".join(lines), token)
 
 
 if __name__ == "__main__":
@@ -200,3 +221,15 @@ if __name__ == "__main__":
         sent[r["id"]] = now_ts
     save_sent(sent)
     print(f"{len(rows)} yeni video gönderildi.")
+
+    # ===== 2. bot: Küçük Kanal Radarı =====
+    if TG_TOKEN_SMALL:
+        sent_s = load_sent("sent_small.json")
+        small = [r for r in score(videos, countries, SMALL_MAX_AGE_HOURS, SMALL_MIN_VIEWS, SMALL_MAX_SUBS)
+                 if r["id"] not in sent_s][:TOP_N]
+        if small:
+            send_telegram(small, "🌱 Küçük Kanal Radarı", TG_TOKEN_SMALL)
+        for r in small:
+            sent_s[r["id"]] = now_ts
+        save_sent(sent_s, "sent_small.json")
+        print(f"Küçük kanal: {len(small)} yeni video gönderildi.")
