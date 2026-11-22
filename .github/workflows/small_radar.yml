@@ -1,0 +1,30 @@
+name: Küçük Kanal Radarı
+
+on:
+  schedule:
+    - cron: "37 */4 * * *"   # 4 saatte bir
+  workflow_dispatch:           # elle çalıştırma butonu
+
+permissions:
+  contents: write              # gönderilen liste (sent_small.json) kaydı için
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python small_radar.py
+        env:
+          YT_API_KEY: ${{ secrets.YT_API_KEY }}
+          TG_TOKEN: ${{ secrets.TG_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          TG_TOKEN_SMALL: ${{ secrets.TG_TOKEN_SMALL }}
+      - name: Gönderilen listeyi kaydet
+        run: |
+          git config user.name "trend-bot"
+          git config user.email "trend-bot@users.noreply.github.com"
+          git add sent_small.json
+          git diff --cached --quiet || (git commit -m "küçük kanal listesi güncellendi" && git pull --rebase && git push)
